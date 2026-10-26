@@ -124,14 +124,14 @@
     <!-- MAIN CHAT APP -->
     <div id="app-view" class="hidden h-full flex flex-col md:flex-row w-full bg-gray-900">
         
+        <!-- Offline / No Database Banner -->
+        <div id="offline-banner" class="hidden absolute top-0 left-0 right-0 bg-red-600 text-white px-4 py-2 flex items-center justify-center shadow-md z-50 text-sm font-semibold">
+            <i class="fas fa-exclamation-triangle mr-2"></i>
+            Modo Offline: Banco de dados não configurado. Para o chat funcionar online no Render, adicione as chaves do Firebase no código.
+        </div>
+
         <!-- Sidebar (Users & Friends) -->
-        <div class="w-full md:w-72 bg-gray-900 border-r border-gray-800 flex flex-col flex-shrink-0 z-20 transition-all">
-            <!-- User Profile Area -->
-            <div class="p-4 bg-gray-800 border-b border-gray-700 flex items-center justify-between">
-                <div class="flex items-center gap-3 cursor-pointer hover:bg-gray-700 p-2 rounded-lg transition-colors flex-1" onclick="openProfileModal()">
-                    <div id="my-avatar" class="w-10 h-10 rounded-full bg-indigo-500 flex items-center justify-center text-xl font-bold flex-shrink-0 overflow-hidden">
-                        <!-- Avatar inject -->
-                    </div>
+        <div class="w-full md:w-72 bg-gray-900 border-r border-gray-800 flex flex-col flex-shrink-0 z-20 transition-all mt-10 md:mt-0" id="sidebar-container">
                     <div class="overflow-hidden">
                         <div id="my-name" class="font-bold text-white truncate text-sm">Carregando...</div>
                         <div id="my-status" class="text-xs text-gray-400 truncate">Online</div>
@@ -223,13 +223,14 @@
         let unsubMessages = null;
         let unsubProfiles = null;
         let unsubAnnounce = null;
+        let isOfflineMode = false;
 
         const ADMIN_USERNAME = 'Ratão';
         const ADMIN_PASS = 'rataoadm123';
 
         // Firebase Initialization
         const initFirebase = async () => {
-            // ⚠️ ATENÇÃO: PARA HOSPEDAR NO GITHUB PAGES OU RENDER, COLOQUE SUAS CREDENCIAIS AQUI!
+            // ⚠️ ATENÇÃO: PARA HOSPEDAR NO RENDER, COLOQUE SUAS CREDENCIAIS DO FIREBASE AQUI!
             const myFirebaseConfig = {
                 apiKey: "COLOQUE_SUA_API_KEY_AQUI",
                 authDomain: "COLOQUE_SEU_AUTH_DOMAIN_AQUI",
@@ -244,23 +245,30 @@
             
             try {
                 let firebaseConfig = JSON.parse(firebaseConfigStr);
-                // Se estiver fora do ambiente de testes (ex: no GitHub Pages) e tiver configurado as chaves
+                
+                // Se estiver rodando fora do meu ambiente (ex: no Render)
                 if (!Object.keys(firebaseConfig).length || myFirebaseConfig.apiKey !== "COLOQUE_SUA_API_KEY_AQUI") {
                     firebaseConfig = myFirebaseConfig;
                 }
+                
+                // Se o usuário não configurou as chaves, ativa o modo offline
                 if (firebaseConfig.apiKey === "COLOQUE_SUA_API_KEY_AQUI") {
-                    throw new Error("Credenciais do Firebase não configuradas.");
+                    isOfflineMode = true;
+                    document.getElementById('offline-banner').classList.remove('hidden');
+                    document.getElementById('sidebar-container').classList.add('md:mt-10');
+                    return; // Interrompe inicialização
                 }
+                
                 app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                window.db = db;
+                window.appId = typeof __app_id !== 'undefined' ? __app_id : 'chat-ratao-oficial';
             } catch (e) {
-                console.error("Erro Firebase (Configure as chaves!):", e);
-                app = initializeApp({ projectId: 'fallback-project' }); 
+                console.error("Erro Firebase:", e);
+                isOfflineMode = true;
+                document.getElementById('offline-banner').classList.remove('hidden');
             }
-            
-            db = getFirestore(app);
-            auth = getAuth(app);
-            window.db = db;
-            window.appId = typeof __app_id !== 'undefined' ? __app_id : 'chat-ratao-oficial';
         };
 
         // UI Helpers
@@ -309,8 +317,6 @@
         };
 
         // --- AUTH & LOGIN LOGIC ---
-        // Para simplificar no ambiente sem funções de backend complexas, 
-        // usamos as senhas salvas no documento (Isso é apenas para fins educacionais neste sandbox. Num app real, senhas nunca ficam no client).
         window.handleAuth = async () => {
             const userInp = document.getElementById('login-username').value.trim();
             const passInp = document.getElementById('login-password').value.trim();
@@ -323,6 +329,27 @@
             const btn = document.getElementById('btn-login');
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Carregando...';
             btn.disabled = true;
+
+            // Se estiver no modo offline (sem banco de dados configurado no Render)
+            if (isOfflineMode) {
+                setTimeout(() => {
+                    let role = 'user';
+                    if (userInp === ADMIN_USERNAME && passInp === ADMIN_PASS) {
+                        role = 'admin';
+                    }
+                    myProfile = {
+                        id: userInp.toLowerCase(), username: userInp, role: role, avatar: '', statusText: 'Modo Offline', banned: false, friends: [], lastSeen: Date.now()
+                    };
+                    currentUser = { uid: 'offline-user' };
+                    
+                    document.getElementById('login-view').classList.add('hidden');
+                    document.getElementById('app-view').classList.remove('hidden');
+                    document.getElementById('app-view').classList.add('flex');
+                    showToast("Login em Modo Offline (Sem banco de dados)", "info");
+                    initApp();
+                }, 1000);
+                return;
+            }
 
             try {
                 // Autenticar com Firebase
