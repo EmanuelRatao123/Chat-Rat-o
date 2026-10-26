@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Online - Ratão</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #111827; color: #f3f4f6; overflow: hidden; }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1f2937; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+        .msg-enter { animation: slideIn 0.3s ease-out forwards; }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .toast-enter { animation: toastIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateX(100%); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col">
+
+    <!-- OVERLAYS / MODALS -->
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="fixed top-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- Error / Ban Modal -->
+    <div id="ban-modal" class="fixed inset-0 bg-black bg-opacity-80 z-50 hidden flex items-center justify-center">
+        <div class="bg-gray-800 p-8 rounded-xl shadow-2xl text-center max-w-md w-full border border-red-500">
+            <i class="fas fa-ban text-6xl text-red-500 mb-4"></i>
+            <h2 class="text-3xl font-bold text-red-500 mb-2">Conta Banida</h2>
+            <p id="ban-reason" class="text-gray-300 mb-6">Você foi banido deste servidor.</p>
+            <button onclick="window.location.reload()" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded transition-colors">Voltar</button>
+        </div>
+    </div>
+
+    <!-- Edit Profile Modal -->
+    <div id="profile-modal" class="fixed inset-0 bg-black bg-opacity-70 z-40 hidden flex items-center justify-center">
+        <div class="bg-gray-800 p-6 rounded-xl shadow-2xl max-w-sm w-full border border-gray-700">
+            <h2 class="text-xl font-bold text-white mb-4">Personalizar Perfil</h2>
+            <div class="mb-4">
+                <label class="block text-gray-400 text-sm mb-2">Avatar (URL ou Emoji)</label>
+                <input type="text" id="edit-avatar-input" class="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white focus:outline-none focus:border-indigo-500" placeholder="https://... ou 🦊">
+            </div>
+            <div class="mb-6">
+                <label class="block text-gray-400 text-sm mb-2">Status Personalizado</label>
+                <input type="text" id="edit-status-input" class="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white focus:outline-none focus:border-indigo-500" placeholder="O que você está pensando?">
+            </div>
+            <div class="flex justify-end gap-3">
+                <button onclick="closeProfileModal()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded transition-colors">Cancelar</button>
+                <button onclick="saveProfile()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded transition-colors font-semibold">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Modal -->
+    <div id="admin-modal" class="fixed inset-0 bg-black bg-opacity-70 z-40 hidden flex items-center justify-center">
+        <div class="bg-gray-800 p-6 rounded-xl shadow-2xl max-w-lg w-full border border-yellow-600">
+            <h2 class="text-2xl font-bold text-yellow-500 mb-4"><i class="fas fa-crown mr-2"></i>Painel do Ratão</h2>
+            
+            <div class="mb-6">
+                <h3 class="text-lg font-semibold text-white mb-2">Enviar Anúncio Global</h3>
+                <div class="flex gap-2">
+                    <input type="text" id="admin-announcement-input" class="flex-1 bg-gray-900 border border-gray-700 rounded p-2 text-white focus:outline-none focus:border-yellow-500" placeholder="Mensagem para todos...">
+                    <button onclick="sendAnnouncement()" class="bg-yellow-600 hover:bg-yellow-500 text-white px-4 py-2 rounded font-bold transition-colors">Enviar</button>
+                </div>
+            </div>
+
+            <div>
+                <h3 class="text-lg font-semibold text-white mb-2">Gerenciar Usuários</h3>
+                <div id="admin-users-list" class="max-h-48 overflow-y-auto space-y-2 bg-gray-900 p-2 rounded border border-gray-700">
+                    <!-- Users injected here -->
+                </div>
+            </div>
+
+            <div class="mt-6 flex justify-end">
+                <button onclick="closeAdminModal()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded transition-colors">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- LOGIN SCREEN -->
+    <div id="login-view" class="flex-1 flex items-center justify-center bg-gray-900 relative">
+        <div class="absolute inset-0 z-0 opacity-20" style="background-image: radial-gradient(#4f46e5 1px, transparent 1px); background-size: 30px 30px;"></div>
+        <div class="bg-gray-800 p-8 rounded-2xl shadow-2xl max-w-sm w-full z-10 border border-gray-700">
+            <div class="text-center mb-8">
+                <div class="w-20 h-20 bg-indigo-600 rounded-full mx-auto flex items-center justify-center text-4xl mb-4 shadow-lg shadow-indigo-500/50">
+                    💬
+                </div>
+                <h1 class="text-2xl font-bold text-white">Chat do Ratão</h1>
+                <p class="text-gray-400 text-sm">Conecte-se para começar a falar.</p>
+            </div>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-gray-400 text-sm mb-1">Usuário</label>
+                    <input type="text" id="login-username" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:border-indigo-500 transition-colors" placeholder="Seu nome de usuário">
+                </div>
+                <div>
+                    <label class="block text-gray-400 text-sm mb-1">Senha</label>
+                    <input type="password" id="login-password" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:border-indigo-500 transition-colors" placeholder="••••••••">
+                </div>
+                
+                <div class="pt-2">
+                    <button id="btn-login" onclick="handleAuth()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 px-4 rounded-lg transition-colors flex justify-center items-center gap-2">
+                        <span>Entrar / Registrar</span>
+                        <i class="fas fa-arrow-right"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN CHAT APP -->
+    <div id="app-view" class="hidden h-full flex flex-col md:flex-row w-full bg-gray-900">
+        
+        <!-- Sidebar (Users & Friends) -->
+        <div class="w-full md:w-72 bg-gray-900 border-r border-gray-800 flex flex-col flex-shrink-0 z-20 transition-all">
+            <!-- User Profile Area -->
+            <div class="p-4 bg-gray-800 border-b border-gray-700 flex items-center justify-between">
+                <div class="flex items-center gap-3 cursor-pointer hover:bg-gray-700 p-2 rounded-lg transition-colors flex-1" onclick="openProfileModal()">
+                    <div id="my-avatar" class="w-10 h-10 rounded-full bg-indigo-500 flex items-center justify-center text-xl font-bold flex-shrink-0 overflow-hidden">
+                        <!-- Avatar inject -->
+                    </div>
+                    <div class="overflow-hidden">
+                        <div id="my-name" class="font-bold text-white truncate text-sm">Carregando...</div>
+                        <div id="my-status" class="text-xs text-gray-400 truncate">Online</div>
+                    </div>
+                </div>
+                <button onclick="logout()" class="text-gray-400 hover:text-red-400 p-2 transition-colors" title="Sair">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>
+            </div>
+
+            <!-- Navigation/Tabs -->
+            <div class="flex border-b border-gray-800">
+                <button onclick="switchTab('global')" id="tab-global" class="flex-1 py-3 text-sm font-semibold text-indigo-400 border-b-2 border-indigo-500 transition-colors">Global</button>
+                <button onclick="switchTab('friends')" id="tab-friends" class="flex-1 py-3 text-sm font-semibold text-gray-500 border-b-2 border-transparent hover:text-gray-300 transition-colors">Amigos</button>
+            </div>
+
+            <!-- Users List -->
+            <div class="flex-1 overflow-y-auto p-2 space-y-1" id="users-list-container">
+                <!-- User items injected here -->
+            </div>
+
+            <!-- Admin Button (Hidden by default) -->
+            <div id="admin-panel-btn" class="hidden p-4 border-t border-gray-800">
+                <button onclick="openAdminModal()" class="w-full bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-2 rounded shadow-lg shadow-yellow-600/20 transition-colors flex items-center justify-center gap-2">
+                    <i class="fas fa-crown"></i> Painel do Ratão
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Chat Area -->
+        <div class="flex-1 flex flex-col h-full bg-gray-900 relative">
+            
+            <!-- Global Announcement Banner -->
+            <div id="announcement-banner" class="hidden bg-yellow-600 text-white px-4 py-2 flex items-center justify-between shadow-md z-10">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-bullhorn animate-pulse"></i>
+                    <span id="announcement-text" class="font-semibold text-sm"></span>
+                </div>
+                <button onclick="hideAnnouncement()" class="text-white hover:text-gray-200">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <!-- Chat Header -->
+            <div class="h-16 bg-gray-800 border-b border-gray-700 flex items-center px-6 flex-shrink-0 shadow-sm z-10">
+                <i class="fas fa-hashtag text-gray-400 mr-2 text-xl"></i>
+                <h2 class="text-xl font-bold text-white">chat-geral</h2>
+                <div class="ml-auto text-sm text-gray-400 flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-green-500 inline-block"></span>
+                    <span id="online-count">0 online</span>
+                </div>
+            </div>
+
+            <!-- Messages List -->
+            <div id="messages-container" class="flex-1 overflow-y-auto p-6 space-y-6 flex flex-col">
+                <div class="text-center text-gray-500 my-4 text-sm bg-gray-800/50 py-2 rounded-lg mx-auto w-fit px-4 border border-gray-700">
+                    Bem-vindo ao início do #chat-geral!
+                </div>
+                <!-- Messages injected here -->
+            </div>
+
+            <!-- Chat Input -->
+            <div class="p-4 bg-gray-800 border-t border-gray-700 flex-shrink-0">
+                <form id="chat-form" class="flex gap-2 max-w-4xl mx-auto" onsubmit="sendMessage(event)">
+                    <input type="text" id="message-input" autocomplete="off" class="flex-1 bg-gray-700 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 border border-transparent transition-all placeholder-gray-400" placeholder="Conversar em #chat-geral...">
+                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl px-6 py-3 font-semibold transition-colors flex items-center gap-2 shadow-lg shadow-indigo-600/30">
+                        <i class="fas fa-paper-plane"></i> <span class="hidden sm:inline">Enviar</span>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase Imports & Logic -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, serverTimestamp, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global State
+        let app, db, auth;
+        let currentUser = null; // Internal auth user
+        let myProfile = null; // Profile document data
+        let currentTab = 'global';
+        let allProfiles = {};
+        let friendsList = [];
+        
+        // Unsubscribers for cleanup
+        let unsubMessages = null;
+        let unsubProfiles = null;
+        let unsubAnnounce = null;
+
+        const ADMIN_USERNAME = 'Ratão';
+        const ADMIN_PASS = 'rataoadm123';
+
+        // Firebase Initialization
+        const initFirebase = async () => {
+            // ⚠️ ATENÇÃO: PARA HOSPEDAR NO GITHUB PAGES OU RENDER, COLOQUE SUAS CREDENCIAIS AQUI!
+            const myFirebaseConfig = {
+                apiKey: "COLOQUE_SUA_API_KEY_AQUI",
+                authDomain: "COLOQUE_SEU_AUTH_DOMAIN_AQUI",
+                projectId: "COLOQUE_SEU_PROJECT_ID_AQUI",
+                storageBucket: "COLOQUE_SEU_STORAGE_BUCKET_AQUI",
+                messagingSenderId: "COLOQUE_SEU_MESSAGING_SENDER_ID_AQUI",
+                appId: "COLOQUE_SEU_APP_ID_AQUI"
+            };
+
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'chat-ratao-oficial';
+            const firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
+            
+            try {
+                let firebaseConfig = JSON.parse(firebaseConfigStr);
+                // Se estiver fora do ambiente de testes (ex: no GitHub Pages) e tiver configurado as chaves
+                if (!Object.keys(firebaseConfig).length || myFirebaseConfig.apiKey !== "COLOQUE_SUA_API_KEY_AQUI") {
+                    firebaseConfig = myFirebaseConfig;
+                }
+                if (firebaseConfig.apiKey === "COLOQUE_SUA_API_KEY_AQUI") {
+                    throw new Error("Credenciais do Firebase não configuradas.");
+                }
+                app = initializeApp(firebaseConfig);
+            } catch (e) {
+                console.error("Erro Firebase (Configure as chaves!):", e);
+                app = initializeApp({ projectId: 'fallback-project' }); 
+            }
+            
+            db = getFirestore(app);
+            auth = getAuth(app);
+            window.db = db;
+            window.appId = typeof __app_id !== 'undefined' ? __app_id : 'chat-ratao-oficial';
+        };
+
+        // UI Helpers
+        const showToast = (message, type = 'info') => {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            let color = 'bg-gray-800 border-gray-700';
+            let icon = 'fa-info-circle text-blue-400';
+            
+            if (type === 'error') { color = 'bg-red-900 border-red-700'; icon = 'fa-exclamation-circle text-red-200'; }
+            else if (type === 'success') { color = 'bg-green-900 border-green-700'; icon = 'fa-check-circle text-green-200'; }
+            
+            toast.className = `toast-enter flex items-center gap-3 p-4 rounded-lg shadow-lg border text-white ${color}`;
+            toast.innerHTML = `<i class="fas ${icon}"></i> <span class="text-sm font-medium">${message}</span>`;
+            
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(100%)';
+                toast.style.transition = 'all 0.3s ease';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        };
+
+        const generateAvatar = (name) => {
+            const colors = ['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#22c55e', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#f43f5e'];
+            const color = colors[name.length % colors.length];
+            const initial = name.charAt(0).toUpperCase();
+            return { type: 'color', value: color, initial: initial };
+        };
+
+        const renderAvatar = (avatarData, name, className = '') => {
+            if (!avatarData) {
+                const gen = generateAvatar(name || '?');
+                return `<div class="${className} flex items-center justify-center font-bold text-white shadow-inner" style="background-color: ${gen.value}">${gen.initial}</div>`;
+            }
+            
+            // se for um link de imagem
+            if (avatarData.startsWith('http')) {
+                return `<img src="${avatarData}" class="${className} object-cover" onerror="this.src='https://placehold.co/100x100/1f2937/ffffff?text=${name.charAt(0)}'"/>`;
+            }
+            
+            // se for emoji ou outra coisa
+            return `<div class="${className} bg-gray-700 flex items-center justify-center text-xl shadow-inner">${avatarData}</div>`;
+        };
+
+        // --- AUTH & LOGIN LOGIC ---
+        // Para simplificar no ambiente sem funções de backend complexas, 
+        // usamos as senhas salvas no documento (Isso é apenas para fins educacionais neste sandbox. Num app real, senhas nunca ficam no client).
+        window.handleAuth = async () => {
+            const userInp = document.getElementById('login-username').value.trim();
+            const passInp = document.getElementById('login-password').value.trim();
+            
+            if (!userInp || !passInp) {
+                showToast("Preencha usuário e senha.", "error");
+                return;
+            }
+
+            const btn = document.getElementById('btn-login');
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Carregando...';
+            btn.disabled = true;
+
+            try {
+                // Autenticar com Firebase
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                
+                currentUser = auth.currentUser;
+                if (!currentUser) throw new Error("Falha na autenticação do Firebase");
+
+                // Verificar Perfil
+                const profileId = userInp.toLowerCase(); // ID único
+                const profileRef = doc(db, 'artifacts', window.appId, 'public', 'data', 'profiles', profileId);
+                const profileSnap = await getDoc(profileRef);
+
+                let isNovo = false;
+
+                if (profileSnap.exists()) {
+                    const data = profileSnap.data();
+                    if (data.password !== passInp) {
+                        throw new Error("Senha incorreta.");
+                    }
+                    myProfile = data;
+                } else {
+                    // Registrar novo usuário
+                    let role = 'user';
+                    if (userInp === ADMIN_USERNAME && passInp === ADMIN_PASS) {
+                        role = 'admin';
+                    }
+
+                    myProfile = {
+                        id: profileId,
+                        username: userInp,
+                        password: passInp, // Sandbox only
+                        role: role,
+                        avatar: '',
+                        statusText: 'Novo no pedaço!',
+                        banned: false,
+                        banUntil: null,
+                        friends: [],
+                        lastSeen: Date.now()
+                    };
+                    await setDoc(profileRef, myProfile);
+                    isNovo = true;
+                }
+
+                // Check Ban status Immediately
+                if (checkBanStatus(myProfile)) return;
+
+                // Sucesso
+                document.getElementById('login-view').classList.add('hidden');
+                document.getElementById('app-view').classList.remove('hidden');
+                document.getElementById('app-view').classList.add('flex');
+                
+                showToast(isNovo ? "Conta criada com sucesso!" : "Login realizado!", "success");
+                
+                initApp();
+
+            } catch (err) {
+                console.error(err);
+                showToast(err.message || "Erro ao conectar.", "error");
+                btn.innerHTML = '<span>Entrar / Registrar</span> <i class="fas fa-arrow-right"></i>';
+                btn.disabled = false;
+            }
+        };
+
+        const checkBanStatus = (profile) => {
+            if (!profile || !profile.banned) return false;
+            
+            const now = Date.now();
+            if (profile.banUntil && now > profile.banUntil) {
+                // Ban expired
+                return false;
+            }
+
+            // Banned
+            document.getElementById('app-view').classList.add('hidden');
+            document.getElementById('app-view').classList.remove('flex');
+            document.getElementById('ban-modal').classList.remove('hidden');
+            
+            const reason = profile.banUntil ? `Banido temporariamente até ${new Date(profile.banUntil).toLocaleString()}` : "Banimento Permanente.";
+            document.getElementById('ban-reason').innerText = reason;
+            
+            // Stop listeners
+            if (unsubMessages) unsubMessages();
+            if (unsubProfiles) unsubProfiles();
+            if (unsubAnnounce) unsubAnnounce();
+            
+            return true;
+        };
+
+        window.logout = async () => {
+            await signOut(auth);
+            window.location.reload();
+        };
+
+        // --- CORE APP LOGIC ---
+        const initApp = () => {
+            updateMyProfileUI();
+            
+            if (myProfile.role === 'admin') {
+                document.getElementById('admin-panel-btn').classList.remove('hidden');
+            }
+
+            listenToProfiles();
+            listenToMessages();
+            listenToAnnouncements();
+            
+            // Atualizar lastSeen periodicamente
+            setInterval(() => {
+                if (myProfile && currentUser) {
+                    const profileRef = doc(db, 'artifacts', window.appId, 'public', 'data', 'profiles', myProfile.id);
+                    setDoc(profileRef, { lastSeen: Date.now() }, { merge: true }).catch(()=>{});
+                }
+            }, 30000);
+        };
+
+        const updateMyProfileUI = () => {
+            if (!myProfile) return;
+            document.getElementById('my-avatar').outerHTML = renderAvatar(myProfile.avatar, myProfile.username, "w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center text-xl font-bold overflow-hidden cursor-pointer");
+            // Need to set ID back since outerHTML removes it if not careful, actually let's just replace inner contents if possible, or keep outer structure.
+            // Better to wrap:
+            const avatarContainer = document.getElementById('my-avatar') || document.querySelector('[onclick="openProfileModal()"] > div:first-child');
+            if (avatarContainer) {
+                avatarContainer.id = 'my-avatar';
+                avatarContainer.className = "w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center font-bold overflow-hidden cursor-pointer";
+                if(myProfile.avatar && myProfile.avatar.startsWith('http')) {
+                    avatarContainer.innerHTML = `<img src="${myProfile.avatar}" class="w-full h-full object-cover"/>`;
+                } else if(myProfile.avatar) {
+                    avatarContainer.innerHTML = myProfile.avatar;
+                    avatarContainer.style.backgroundColor = '#374151';
+                } else {
+                    const gen = generateAvatar(myProfile.username);
+                    avatarContainer.style.backgroundColor = gen.value;
+                    avatarContainer.innerHTML = gen.initial;
+                }
+            }
+
+            document.getElementById('my-name').innerText = myProfile.username;
+            document.getElementById('my-status').innerText = myProfile.statusText || 'Online';
+            
+            if (myProfile.role === 'admin') {
+                document.getElementById('my-name').innerHTML = `<i class="fas fa-crown text-yellow-500 mr-1 text-xs"></i> ${myProfile.username}`;
+            }
+        };
+
+        // --- LISTENERS ---
+        const listenToProfiles = () => {
+            if (!currentUser) return;
+            const colRef = collection(db, 'artifacts', window.appId, 'public', 'data', 'profiles');
+            
+            unsubProfiles = onSnapshot(colRef, (snapshot) => {
+                allProfiles = {};
+                let onlineCount = 0;
+                const now = Date.now();
+
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    allProfiles[data.id] = data;
+                    
+                    // Check if self and got banned
+                    if (data.id === myProfile.id) {
+                        const oldBanned = myProfile.banned;
+                        myProfile = data; // update local ref
+                        friendsList = myProfile.friends || [];
+                        updateMyProfileUI();
+                        if (checkBanStatus(myProfile)) return;
+                    }
+
+                    // Count online (last seen within 2 minutes)
+                    if (!data.banned && (now - data.lastSeen < 120000)) {
+                        onlineCount++;
+                    }
+                });
+
+                document.getElementById('online-count').innerText = `${onlineCount} online`;
+                renderSidebarUsers();
+                if (myProfile.role === 'admin' && !document.getElementById('admin-modal').classList.contains('hidden')) {
+                    renderAdminUsersList();
+                }
+            }, (err) => console.error("Erro Profiles: ", err));
+        };
+
+        const renderSidebarUsers = () => {
+            const container = document.getElementById('users-list-container');
+            container.innerHTML = '';
+            
+            const now = Date.now();
+            
+            let displayUsers = [];
+            
+            if (currentTab === 'global') {
+                displayUsers = Object.values(allProfiles).filter(p => !p.banned);
+                // Sort by online status then name
+                displayUsers.sort((a, b) => {
+                    const aOnline = (now - a.lastSeen < 120000) ? 1 : 0;
+                    const bOnline = (now - b.lastSeen < 120000) ? 1 : 0;
+                    if (aOnline !== bOnline) return bOnline - aOnline;
+                    return a.username.localeCompare(b.username);
+                });
+            } else {
+                displayUsers = Object.values(allProfiles).filter(p => friendsList.includes(p.id) && !p.banned);
+            }
+
+            if (displayUsers.length === 0 && currentTab === 'friends') {
+                container.innerHTML = '<div class="text-gray-500 text-center text-sm p-4">Nenhum amigo adicionado ainda.</div>';
+                return;
+            }
+
+            displayUsers.forEach(user => {
+                const isOnline = (now - user.lastSeen < 120000);
+                const isMe = user.id === myProfile.id;
+                const isFriend = friendsList.includes(user.id);
+                const isAdmin = user.role === 'admin';
+                
+                const statusColor = isOnline ? 'bg-green-500' : 'bg-gray-500';
+                
+                const div = document.createElement('div');
+                div.className = "flex items-center gap-3 p-2 hover:bg-gray-800 rounded-lg transition-colors group";
+                
+                let avatarHTML = '';
+                if(user.avatar && user.avatar.startsWith('http')) {
+                    avatarHTML = `<img src="${user.avatar}" class="w-8 h-8 rounded-full object-cover"/>`;
+                } else if(user.avatar) {
+                    avatarHTML = `<div class="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-sm shadow-inner">${user.avatar}</div>`;
+                } else {
+                    const gen = generateAvatar(user.username);
+                    avatarHTML = `<div class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-white text-sm shadow-inner" style="background-color: ${gen.value}">${gen.initial}</div>`;
+                }
+
+                div.innerHTML = `
+                    <div class="relative">
+                        ${avatarHTML}
+                        <div class="absolute -bottom-1 -right-1 w-3 h-3 ${statusColor} border-2 border-gray-900 rounded-full"></div>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="font-medium text-gray-200 text-sm truncate flex items-center gap-1">
+                            ${isAdmin ? '<i class="fas fa-crown text-yellow-500 text-xs" title="Admin"></i>' : ''}
+                            ${user.username}
+                        </div>
+                        <div class="text-xs text-gray-500 truncate">${user.statusText || ''}</div>
+                    </div>
+                    ${!isMe ? `
+                        <button onclick="toggleFriend('${user.id}')" class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-indigo-400 transition-all p-1">
+                            <i class="fa-${isFriend ? 'solid text-indigo-400' : 'regular'} fa-star"></i>
+                        </button>
+                    ` : ''}
+                `;
+                container.appendChild(div);
+            });
+        };
+
+        window.switchTab = (tab) => {
+            currentTab = tab;
+            document.getElementById('tab-global').className = `flex-1 py-3 text-sm font-semibold transition-colors ${tab === 'global' ? 'text-indigo-400 border-b-2 border-indigo-500' : 'text-gray-500 border-b-2 border-transparent hover:text-gray-300'}`;
+            document.getElementById('tab-friends').className = `flex-1 py-3 text-sm font-semibold transition-colors ${tab === 'friends' ? 'text-indigo-400 border-b-2 border-indigo-500' : 'text-gray-500 border-b-2 border-transparent hover:text-gray-300'}`;
+            renderSidebarUsers();
+        };
+
+        window.toggleFriend = async (friendId) => {
+            if (!myProfile) return;
+            let newFriends = [...friendsList];
+            if (newFriends.includes(friendId)) {
+                newFriends = newFriends.filter(id => id !== friendId);
+                showToast("Amigo removido.");
+            } else {
+                newFriends.push(friendId);
+                showToast("Amigo adicionado!");
+            }
+            
+            const profileRef = doc(db, 'artifacts', window.appId, 'public', 'data', 'profiles', myProfile.id);
+            await setDoc(profileRef, { friends: newFriends }, { merge: true });
+        };
+
+        // --- MESSAGES ---
+        const listenToMessages = () => {
+            if (!currentUser) return;
+            const colRef = collection(db, 'artifacts', window.appId, 'public', 'data', 'globalChat');
+            
+            unsubMessages = onSnapshot(colRef, (snapshot) => {
+                let msgs = [];
+                snapshot.forEach(doc => msgs.push({ id: doc.id, ...doc.data() }));
+                
+                // No complex queries, sort in memory
+                msgs.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+                
+                // Limit to last 100 on client to avoid memory blowup
+                if (msgs.length > 100) msgs = msgs.slice(msgs.length - 100);
+
+                renderMessages(msgs);
+            }, (err) => console.error("Erro Mensagens: ", err));
+        };
+
+        const renderMessages = (msgs) => {
+            const container = document.getElementById('messages-container');
+            const isScrolledToBottom = container.scrollHeight - container.clientHeight <= container.scrollTop + 50;
+            
+            // Clear but keep the welcome message
+            container.innerHTML = `
+                <div class="text-center text-gray-500 my-4 text-sm bg-gray-800/50 py-2 rounded-lg mx-auto w-fit px-4 border border-gray-700">
+                    Bem-vindo ao início do #chat-geral!
+                </div>
+            `;
+
+            let lastSenderId = null;
+
+            msgs.forEach(msg => {
+                const isMe = msg.senderId === myProfile.id;
+                const senderProfile = allProfiles[msg.senderId] || { username: msg.senderName, avatar: '', role: 'user' };
+                const isAdmin = senderProfile.role === 'admin';
+                
+                const time = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '';
+                
+                const msgDiv = document.createElement('div');
+                msgDiv.className = `flex gap-4 msg-enter ${isMe ? 'flex-row-reverse' : ''}`;
+                
+                const showAvatar = lastSenderId !== msg.senderId;
+                
+                let avatarHTML = '';
+                if (showAvatar) {
+                    if(senderProfile.avatar && senderProfile.avatar.startsWith('http')) {
+                        avatarHTML = `<img src="${senderProfile.avatar}" class="w-10 h-10 rounded-full object-cover shadow-sm"/>`;
+                    } else if(senderProfile.avatar) {
+                        avatarHTML = `<div class="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center text-lg shadow-inner">${senderProfile.avatar}</div>`;
+                    } else {
+                        const gen = generateAvatar(senderProfile.username);
+                        avatarHTML = `<div class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white text-lg shadow-inner" style="background-color: ${gen.value}">${gen.initial}</div>`;
+                    }
+                } else {
+                    avatarHTML = `<div class="w-10 h-10 flex-shrink-0"></div>`;
+                }
+
+                const nameColor = isAdmin ? 'text-yellow-500' : (isMe ? 'text-indigo-400' : 'text-gray-300');
+                const badge = isAdmin ? '<i class="fas fa-crown text-xs ml-1"></i>' : '';
+                
+                const bgBubble = isMe ? 'bg-indigo-600 rounded-br-none' : 'bg-gray-800 rounded-bl-none border border-gray-700';
+
+                msgDiv.innerHTML = `
+                    <div class="flex-shrink-0 mt-1">
+                        ${avatarHTML}
+                    </div>
+                    <div class="flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[75%]">
+                        ${showAvatar ? `
+                            <div class="flex items-baseline gap-2 mb-1">
+                                <span class="font-bold text-sm ${nameColor}">${senderProfile.username} ${badge}</span>
+                                <span class="text-xs text-gray-500">${time}</span>
+                            </div>
+                        ` : ''}
+                        <div class="${bgBubble} text-white px-4 py-2.5 rounded-2xl shadow-sm break-words leading-relaxed text-[15px]">
+                            ${escapeHTML(msg.text)}
+                        </div>
+                    </div>
+                `;
+                
+                container.appendChild(msgDiv);
+                lastSenderId = msg.senderId;
+            });
+
+            if (isScrolledToBottom || msgs.length === 0) {
+                container.scrollTop = container.scrollHeight;
+            }
+        };
+
+        window.sendMessage = async (e) => {
+            e.preventDefault();
+            if (!currentUser || !myProfile || myProfile.banned) return;
+            
+            const input = document.getElementById('message-input');
+            const text = input.value.trim();
+            if (!text) return;
+            
+            input.value = '';
+            
+            const colRef = collection(db, 'artifacts', window.appId, 'public', 'data', 'globalChat');
+            
+            // Create a unique ID manually based on time to help sorting locally since we can't use server timestamp in sorting query easily without rules
+            const docId = Date.now().toString() + Math.random().toString(36).substring(2, 7);
+            const docRef = doc(colRef, docId);
+            
+            try {
+                await setDoc(docRef, {
+                    text: text,
+                    senderId: myProfile.id,
+                    senderName: myProfile.username,
+                    timestamp: Date.now() 
+                });
+            } catch (err) {
+                showToast("Erro ao enviar mensagem.", "error");
+                console.error(err);
+            }
+        };
+
+        const escapeHTML = (str) => {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        };
+
+        // --- ANNOUNCEMENTS ---
+        const listenToAnnouncements = () => {
+            if (!currentUser) return;
+            const colRef = collection(db, 'artifacts', window.appId, 'public', 'data', 'announcements');
+            
+            unsubAnnounce = onSnapshot(colRef, (snapshot) => {
+                let latest = null;
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    if (!latest || data.timestamp > latest.timestamp) {
+                        latest = data;
+                    }
+                });
+
+                if (latest && (Date.now() - latest.timestamp < 3600000)) { // Valid for 1 hour
+                    const banner = document.getElementById('announcement-banner');
+                    document.getElementById('announcement-text').innerText = latest.text;
+                    banner.classList.remove('hidden');
+                } else {
+                    document.getElementById('announcement-banner').classList.add('hidden');
+                }
+            }, (err) => console.error("Erro Announcements: ", err));
+        };
+
+        window.hideAnnouncement = () => {
+            document.getElementById('announcement-banner').classList.add('hidden');
+        };
+
+        window.sendAnnouncement = async () => {
+            if (!currentUser || myProfile.role !== 'admin') return;
+            const input = document.getElementById('admin-announcement-input');
+            const text = input.value.trim();
+            if(!text) return;
+
+            const docId = Date.now().toString();
+            const docRef = doc(db, 'artifacts', window.appId, 'public', 'data', 'announcements', docId);
+            
+            try {
+                await setDoc(docRef, {
+                    text: text,
+                    timestamp: Date.now()
+                });
+                input.value = '';
+                showToast("Anúncio enviado!", "success");
+            } catch(e) {
+                console.error(e);
+                showToast("Erro", "error");
+            }
+        };
+
+        // --- MODALS (PROFILE & ADMIN) ---
+        window.openProfileModal = () => {
+            document.getElementById('edit-avatar-input').value = myProfile.avatar || '';
+            document.getElementById('edit-status-input').value = myProfile.statusText || '';
+            document.getElementById('profile-modal').classList.remove('hidden');
+        };
+
+        window.closeProfileModal = () => {
+            document.getElementById('profile-modal').classList.add('hidden');
+        };
+
+        window.saveProfile = async () => {
+            const avatar = document.getElementById('edit-avatar-input').value.trim();
+            const statusText = document.getElementById('edit-status-input').value.trim();
+            
+            try {
+                const profileRef = doc(db, 'artifacts', window.appId, 'public', 'data', 'profiles', myProfile.id);
+                await setDoc(profileRef, { avatar, statusText }, { merge: true });
+                closeProfileModal();
+                showToast("Perfil atualizado!", "success");
+            } catch (err) {
+                showToast("Erro ao salvar", "error");
+            }
+        };
+
+        window.openAdminModal = () => {
+            if (myProfile.role !== 'admin') return;
+            document.getElementById('admin-modal').classList.remove('hidden');
+            renderAdminUsersList();
+        };
+
+        window.closeAdminModal = () => {
+            document.getElementById('admin-modal').classList.add('hidden');
+        };
+
+        const renderAdminUsersList = () => {
+            const container = document.getElementById('admin-users-list');
+            container.innerHTML = '';
+            
+            Object.values(allProfiles).forEach(user => {
+                if (user.id === myProfile.id || user.role === 'admin') return; // Cannot ban admins or self
+
+                const div = document.createElement('div');
+                div.className = "flex items-center justify-between bg-gray-800 p-2 rounded";
+                
+                div.innerHTML = `
+                    <div>
+                        <div class="text-sm font-bold text-white">${user.username}</div>
+                        <div class="text-xs ${user.banned ? 'text-red-400' : 'text-green-400'}">${user.banned ? 'Banido' : 'Ativo'}</div>
+                    </div>
+                    <div class="flex gap-2">
+                        ${!user.banned ? `
+                            <button onclick="banUser('${user.id}', 24)" class="bg-orange-600 hover:bg-orange-500 text-xs text-white px-2 py-1 rounded" title="Banir por 24h">24h</button>
+                            <button onclick="banUser('${user.id}', 0)" class="bg-red-600 hover:bg-red-500 text-xs text-white px-2 py-1 rounded" title="Banir Permanente">Perm</button>
+                        ` : `
+                            <button onclick="unbanUser('${user.id}')" class="bg-green-600 hover:bg-green-500 text-xs text-white px-2 py-1 rounded">Desbanir</button>
+                        `}
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        };
+
+        window.banUser = async (userId, hours) => {
+            if (myProfile.role !== 'admin') return;
+            const profileRef = doc(db, 'artifacts', window.appId, 'public', 'data', 'profiles', userId);
+            
+            const banUntil = hours > 0 ? Date.now() + (hours * 3600000) : null;
+            
+            try {
+                await setDoc(profileRef, { banned: true, banUntil: banUntil }, { merge: true });
+                showToast(`Usuário banido ${hours > 0 ? 'por ' + hours + 'h' : 'permanentemente'}.`, "success");
+            } catch(e) { console.error(e); }
+        };
+
+        window.unbanUser = async (userId) => {
+            if (myProfile.role !== 'admin') return;
+            const profileRef = doc(db, 'artifacts', window.appId, 'public', 'data', 'profiles', userId);
+            try {
+                await setDoc(profileRef, { banned: false, banUntil: null }, { merge: true });
+                showToast("Usuário desbanido.", "success");
+            } catch(e) { console.error(e); }
+        };
+
+        // Bootstrap App
+        window.onload = () => {
+            initFirebase().catch(e => {
+                console.error(e);
+                showToast("Erro inicial: não foi possível carregar o banco de dados.", "error");
+            });
+            
+            // Permitir Enter para logar
+            document.getElementById('login-password').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') handleAuth();
+            });
+        };
+
+    </script>
+</body>
+</html>
